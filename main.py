@@ -2,7 +2,8 @@ import os
 import json
 from dotenv import load_dotenv
 import openai
-from tools import get_weather
+# +++ ADDED +++ Import the new tools
+from tools import get_weather, get_top_news, get_crypto_price, get_movie_summary
 
 # --- 1. SETUP ---
 load_dotenv()
@@ -12,16 +13,21 @@ client = openai.OpenAI(
     api_key=os.environ.get("TOGETHER_API_KEY"),
 )
 
+# +++ UPDATED +++ Add all functions to the dictionary
 available_tools = {
     "get_weather": get_weather,
+    "get_top_news": get_top_news,
+    "get_crypto_price": get_crypto_price,
+    "get_movie_summary": get_movie_summary,
 }
 
+# +++ UPDATED +++ Expand the schema to include all new tools
 tools_schema = [
     {
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get the current weather for a specified location",
+            "description": "Get the current weather for a specified location.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -31,6 +37,57 @@ tools_schema = [
                     },
                 },
                 "required": ["location"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_top_news",
+            "description": "Get the top news headline for a given country.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "country_code": {
+                        "type": "string",
+                        "description": "The 2-letter ISO 3166-1 alpha-2 code for the country, e.g., 'us' for United States, 'gb' for Great Britain.",
+                    },
+                },
+                "required": ["country_code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_crypto_price",
+            "description": "Get the current price of a cryptocurrency in USD.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin_id": {
+                        "type": "string",
+                        "description": "The ID of the cryptocurrency as per CoinGecko, e.g., 'bitcoin', 'ethereum'.",
+                    },
+                },
+                "required": ["coin_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_movie_summary",
+            "description": "Get a brief summary of a movie from its title.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The full title of the movie.",
+                    },
+                },
+                "required": ["title"],
             },
         },
     }
@@ -45,9 +102,8 @@ while True:
         print("🤖 Goodbye!")
         break
 
-    # Stateless messages for the first call
     messages_for_tool_selection = [
-        {"role": "system", "content": "You are a function calling agent. Call the appropriate function based on the user's query."},
+        {"role": "system", "content": "You are a helpful assistant that uses tools to answer questions. Call the appropriate tool based on the user's query."},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -55,11 +111,12 @@ while True:
 
     try:
         # STEP 1: Call the model to get the tool and arguments
+        # Note: Changed tool_choice to "auto" to allow for conversational responses
         first_response = client.chat.completions.create(
             model="mistralai/Mixtral-8x7B-Instruct-v0.1",
             messages=messages_for_tool_selection,
             tools=tools_schema,
-            tool_choice="required",
+            tool_choice="auto", 
         )
         message = first_response.choices[0].message
 
@@ -69,7 +126,8 @@ while True:
 
     # Proceed only if the model returned a tool call
     if not message.tool_calls:
-        print("Agent: I was unable to select a tool to answer your question.")
+        # If the model didn't call a tool, it might have a direct answer.
+        print(f"Agent: {message.content}")
         continue
 
     # STEP 2: Execute the tool
@@ -89,13 +147,8 @@ while True:
         print(f"Error executing tool: {e}")
         continue
                 
-    # print("4:", message[3]['content'])
     print("🤖 Synthesizing answer...")
 
-    # ======================================================================================
-    # THE DEFINITIVE FIX: A completely new, simple message list for the synthesis step.
-    # We are no longer continuing the old conversation. We are starting a new, simple one.
-    # ======================================================================================
     messages_for_synthesis = [
         {
             "role": "system",
@@ -112,7 +165,6 @@ while True:
         final_response = client.chat.completions.create(
             model="mistralai/Mixtral-8x7B-Instruct-v0.1",
             messages=messages_for_synthesis,
-            # No tools needed for this call
         )
         final_answer = final_response.choices[0].message.content
         print(f"Agent: {final_answer}")
