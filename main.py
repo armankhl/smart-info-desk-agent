@@ -2,7 +2,6 @@ import os
 import json
 from dotenv import load_dotenv
 import openai
-# +++ ADDED +++ Import the new tools
 from tools import get_weather, get_top_news, get_crypto_price, get_movie_summary
 
 # --- 1. SETUP ---
@@ -13,7 +12,6 @@ client = openai.OpenAI(
     api_key=os.environ.get("TOGETHER_API_KEY"),
 )
 
-# +++ UPDATED +++ Add all functions to the dictionary
 available_tools = {
     "get_weather": get_weather,
     "get_top_news": get_top_news,
@@ -21,7 +19,6 @@ available_tools = {
     "get_movie_summary": get_movie_summary,
 }
 
-# +++ UPDATED +++ Expand the schema to include all new tools
 tools_schema = [
     {
         "type": "function",
@@ -30,12 +27,7 @@ tools_schema = [
             "description": "Get the current weather for a specified location.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and state, e.g., San Francisco, CA",
-                    },
-                },
+                "properties": { "location": { "type": "string", "description": "The city and state, e.g., San Francisco, CA" } },
                 "required": ["location"],
             },
         },
@@ -47,12 +39,7 @@ tools_schema = [
             "description": "Get the top news headline for a given country.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "country_code": {
-                        "type": "string",
-                        "description": "The 2-letter ISO 3166-1 alpha-2 code for the country, e.g., 'us' for United States, 'gb' for Great Britain.",
-                    },
-                },
+                "properties": { "country_code": { "type": "string", "description": "The 2-letter ISO 3166-1 alpha-2 code for the country, e.g., 'us' for United States, 'gb' for Great Britain." } },
                 "required": ["country_code"],
             },
         },
@@ -64,12 +51,7 @@ tools_schema = [
             "description": "Get the current price of a cryptocurrency in USD.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "coin_id": {
-                        "type": "string",
-                        "description": "The ID of the cryptocurrency as per CoinGecko, e.g., 'bitcoin', 'ethereum'.",
-                    },
-                },
+                "properties": { "coin_id": { "type": "string", "description": "The ID of the cryptocurrency as per CoinGecko, e.g., 'bitcoin', 'ethereum'." } },
                 "required": ["coin_id"],
             },
         },
@@ -81,12 +63,7 @@ tools_schema = [
             "description": "Get a brief summary of a movie from its title.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "The full title of the movie.",
-                    },
-                },
+                "properties": { "title": { "type": "string", "description": "The full title of the movie." } },
                 "required": ["title"],
             },
         },
@@ -103,7 +80,8 @@ while True:
         break
 
     messages_for_tool_selection = [
-        {"role": "system", "content": "You are a helpful assistant that uses tools to answer questions. Call the appropriate tool based on the user's query."},
+        # This prompt is good. We will keep it.
+        {"role": "system", "content": "You are an expert function-calling agent. Your sole purpose is to identify the correct tool and its arguments based on the user's query. You must call a tool if one is appropriate. Do not provide conversational chatter or explanations; only generate tool calls."},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -111,12 +89,13 @@ while True:
 
     try:
         # STEP 1: Call the model to get the tool and arguments
-        # Note: Changed tool_choice to "auto" to allow for conversational responses
         first_response = client.chat.completions.create(
+            # +++ FIX 1: Use a model fine-tuned for function calling +++
             model="mistralai/Mixtral-8x7B-Instruct-v0.1",
             messages=messages_for_tool_selection,
             tools=tools_schema,
-            tool_choice="auto", 
+            # +++ FIX 2: Force the model to use a tool +++
+            tool_choice="required",
         )
         message = first_response.choices[0].message
 
@@ -126,8 +105,9 @@ while True:
 
     # Proceed only if the model returned a tool call
     if not message.tool_calls:
-        # If the model didn't call a tool, it might have a direct answer.
-        print(f"Agent: {message.content}")
+        # With tool_choice="required", this block should ideally not be reached
+        # unless there's an API error or a very confusing query.
+        print("Agent: I was unable to select a tool to answer your question.")
         continue
 
     # STEP 2: Execute the tool
@@ -163,6 +143,7 @@ while True:
     try:
         # STEP 3: Call the model a second time to synthesize a natural language response
         final_response = client.chat.completions.create(
+            # Using the same powerful model for synthesis is fine
             model="mistralai/Mixtral-8x7B-Instruct-v0.1",
             messages=messages_for_synthesis,
         )

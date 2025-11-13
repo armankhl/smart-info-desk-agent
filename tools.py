@@ -2,29 +2,38 @@
 import os
 import requests
 
-# --- Tool 1: Weather ---
+# tools.py
+
 def get_weather(location: str) -> str:
     """Fetches the current weather for a given location."""
     api_key = os.environ.get("OPENWEATHERMAP_API_KEY")
     base_url = "http://api.openweathermap.org/data/2.5/weather"
     params = {"q": location, "appid": api_key, "units": "metric"}
-    
+
     try:
         response = requests.get(base_url, params=params)
-        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+        response.raise_for_status()  # Raise an exception for bad HTTP status codes (4xx or 5xx)
         data = response.json()
-        
-        # Check if the API returned a valid response
-        if 'weather' not in data or 'main' not in data:
-            return f"Sorry, I couldn't retrieve weather data for {location}."
+
+        # --- REVISED LOGIC ---
+        # OpenWeatherMap returns a 'cod' field. 200 means success.
+        if data.get("cod") != 200:
+            # Provide the specific error message from the API if available
+            error_message = data.get("message", "An unknown error occurred.")
+            return f"Error from weather API for {location}: {error_message}"
 
         weather_desc = data['weather'][0]['description']
         temp = data['main']['temp']
-        return f"The current weather in {location} is {temp}°C with {weather_desc}."
+        city_name = data.get("name", location) # Use the name returned by the API for clarity
+        
+        return f"The current weather in {city_name} is {temp}°C with {weather_desc}."
+
     except requests.exceptions.RequestException as e:
+        # Handles network-level errors (e.g., no internet connection)
         return f"Error fetching weather data: {e}"
     except KeyError:
-        return f"Could not parse weather data for {location}. Please check the location name."
+        # Handles cases where the JSON response is not as expected
+        return f"Could not parse weather data for {location}. The API response structure might have changed."
 
 # --- Tool 2: News ---
 def get_top_news(country_code: str) -> str:
